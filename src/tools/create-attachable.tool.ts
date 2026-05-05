@@ -8,7 +8,8 @@ const toolSchema = z.object({
   file_name: z.string().min(1).describe("File name"),
   note: z.string().optional().describe("Note about the attachment"),
   category: z.string().optional().describe("Attachment category"),
-  content_type: z.string().optional().describe("MIME content type"),
+  content_type: z.string().optional().describe("MIME content type (e.g., 'application/pdf', 'image/png', 'image/jpeg'). Required when base64_content is provided."),
+  base64_content: z.string().optional().describe("Base64-encoded file bytes to upload. When provided, the file is POSTed to the QBO upload endpoint as multipart/form-data. Supported content types: application/pdf, image/png, image/jpeg."),
   attachable_ref: z.object({
     entity_ref_type: z.string().describe("Entity type (e.g., 'Invoice', 'Bill')"),
     entity_ref_value: z.string().describe("Entity ID to attach to"),

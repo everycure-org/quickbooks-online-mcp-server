@@ -6,6 +6,39 @@ jest.unstable_mockModule('../../../src/clients/quickbooks-client', () => ({
   quickbooksClient: mockQuickbooksClient,
 }));
 
+// Mock https for upload tests
+const mockHttpsRequest = jest.fn();
+jest.unstable_mockModule('https', () => ({
+  default: { request: mockHttpsRequest },
+  request: mockHttpsRequest,
+}));
+
+function mockHttpsUploadSuccess(statusCode: number, responseBody: unknown) {
+  const mockReq = { write: jest.fn(), end: jest.fn(), on: jest.fn() };
+  (mockHttpsRequest as any).mockImplementation((_options: unknown, callback: (res: unknown) => void) => {
+    const mockRes = {
+      statusCode,
+      on: jest.fn((event: string, handler: (...args: unknown[]) => void) => {
+        if (event === 'data') handler(Buffer.from(JSON.stringify(responseBody)));
+        else if (event === 'end') handler();
+      }),
+    };
+    callback(mockRes);
+    return mockReq;
+  });
+}
+
+function mockHttpsUploadNetworkError(err: Error) {
+  const mockReq = {
+    write: jest.fn(),
+    end: jest.fn(),
+    on: jest.fn((event: string, handler: (...args: unknown[]) => void) => {
+      if (event === 'error') handler(err);
+    }),
+  };
+  (mockHttpsRequest as any).mockImplementation((_options: unknown, _callback: unknown) => mockReq);
+}
+
 // Dynamic imports after mock setup
 const { getQuickbooksCompanyInfo } = await import('../../../src/handlers/get-quickbooks-company-info.handler');
 const { updateQuickbooksCompanyInfo } = await import('../../../src/handlers/update-quickbooks-company-info.handler');
@@ -190,6 +223,144 @@ describe('Company and Attachable Handlers', () => {
 
       expect(result.isError).toBe(true);
       expect(result.error).toContain('Auth failed');
+    });
+
+    it('should upload file when base64_content is provided', async () => {
+      const uploadResponse = {
+        AttachableResponse: [{ Attachable: { Id: '99', FileName: 'invoice.pdf', FileAccessUri: 'https://example.com/file' }, responseStatus: '200' }]
+      };
+      mockHttpsUploadSuccess(200, uploadResponse);
+
+      const result = await createQuickbooksAttachable({
+        file_name: 'invoice.pdf',
+        content_type: 'application/pdf',
+        base64_content: Buffer.from('fake-pdf-bytes').toString('base64'),
+        note: 'Supplier invoice',
+        attachable_ref: { entity_ref_type: 'Bill', entity_ref_value: '123' },
+      });
+
+      expect(result.isError).toBe(false);
+      expect(result.result).toEqual(uploadResponse);
+      expect(mockHttpsRequest).toHaveBeenCalledTimes(1);
+      const [[reqOptions]] = (mockHttpsRequest as jest.Mock).mock.calls as any[][];
+      expect(reqOptions.method).toBe('POST');
+      expect(reqOptions.path).toBe('/v3/company/mock-realm-id/upload');
+      expect(reqOptions.hostname).toBe('sandbox-quickbooks.api.intuit.com');
+    });
+
+    it('should upload image/png file', async () => {
+      const uploadResponse = { AttachableResponse: [{ Attachable: { Id: '100', FileName: 'photo.png' }, responseStatus: '200' }] };
+      mockHttpsUploadSuccess(200, uploadResponse);
+
+      const result = await createQuickbooksAttachable({
+        file_name: 'photo.png',
+        content_type: 'image/png',
+        base64_content: Buffer.from('fake-png-bytes').toString('base64'),
+      });
+
+      expect(result.isError).toBe(false);
+    });
+
+    it('should upload image/jpeg file', async () => {
+      const uploadResponse = { AttachableResponse: [{ Attachable: { Id: '101', FileName: 'photo.jpg' }, responseStatus: '200' }] };
+      mockHttpsUploadSuccess(200, uploadResponse);
+
+      const result = await createQuickbooksAttachable({
+        file_name: 'photo.jpg',
+        content_type: 'image/jpeg',
+        base64_content: Buffer.from('fake-jpeg-bytes').toString('base64'),
+      });
+
+      expect(result.isError).toBe(false);
+    });
+
+    it('should return error for unsupported content_type on upload', async () => {
+      const result = await createQuickbooksAttachable({
+        file_name: 'archive.zip',
+        content_type: 'application/zip',
+        base64_content: Buffer.from('fake-bytes').toString('base64'),
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.error).toContain('Unsupported content_type');
+      expect(mockHttpsRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return error when base64_content is provided without content_type', async () => {
+      const result = await createQuickbooksAttachable({
+        file_name: 'document.pdf',
+        base64_content: Buffer.from('fake-bytes').toString('base64'),
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.error).toContain('Unsupported content_type');
+      expect(mockHttpsRequest).not.toHaveBeenCalled();
+    });
+
+    it('should return error when QBO upload endpoint returns 4xx', async () => {
+      mockHttpsUploadSuccess(400, { fault: { error: [{ message: 'Bad Request' }] } });
+
+      const result = await createQuickbooksAttachable({
+        file_name: 'invoice.pdf',
+        content_type: 'application/pdf',
+        base64_content: Buffer.from('fake-pdf-bytes').toString('base64'),
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.error).toContain('QBO upload failed');
+    });
+
+    it('should return error on upload network failure', async () => {
+      mockHttpsUploadNetworkError(new Error('ECONNREFUSED'));
+
+      const result = await createQuickbooksAttachable({
+        file_name: 'invoice.pdf',
+        content_type: 'application/pdf',
+        base64_content: Buffer.from('fake-pdf-bytes').toString('base64'),
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.error).toContain('ECONNREFUSED');
+    });
+
+    it('should return error when QBO returns non-JSON response', async () => {
+      const mockReq = { write: jest.fn(), end: jest.fn(), on: jest.fn() };
+      (mockHttpsRequest as any).mockImplementation((_options: unknown, callback: (res: unknown) => void) => {
+        const mockRes = {
+          statusCode: 200,
+          on: jest.fn((event: string, handler: (...args: unknown[]) => void) => {
+            if (event === 'data') handler(Buffer.from('not-valid-json'));
+            else if (event === 'end') handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+
+      const result = await createQuickbooksAttachable({
+        file_name: 'invoice.pdf',
+        content_type: 'application/pdf',
+        base64_content: Buffer.from('fake-pdf-bytes').toString('base64'),
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.error).toContain('unexpected response');
+    });
+
+    it('should use production host when not sandbox', async () => {
+      (mockQuickbooksClient.getAuthCredentials as any).mockReturnValue({ accessToken: 'mock-token', realmId: 'prod-realm', isSandbox: false });
+      const uploadResponse = { AttachableResponse: [{ Attachable: { Id: '102' }, responseStatus: '200' }] };
+      mockHttpsUploadSuccess(200, uploadResponse);
+
+      await createQuickbooksAttachable({
+        file_name: 'invoice.pdf',
+        content_type: 'application/pdf',
+        base64_content: Buffer.from('fake-pdf-bytes').toString('base64'),
+      });
+
+      const [[reqOptions]] = (mockHttpsRequest as jest.Mock).mock.calls as any[][];
+      expect(reqOptions.hostname).toBe('quickbooks.api.intuit.com');
+      expect(reqOptions.path).toBe('/v3/company/prod-realm/upload');
     });
   });
 

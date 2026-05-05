@@ -337,6 +337,17 @@ class QuickbooksClient {
     }
     return this.quickbooksInstance;
   }
+
+  getAuthCredentials(): { accessToken: string; realmId: string; isSandbox: boolean } {
+    if (!this.accessToken || !this.realmId) {
+      throw new Error('Quickbooks not authenticated. Call authenticate() first');
+    }
+    return {
+      accessToken: this.accessToken,
+      realmId: this.realmId,
+      isSandbox: this.environment === 'sandbox',
+    };
+  }
 }
 
 export const quickbooksClient = new QuickbooksClient({
