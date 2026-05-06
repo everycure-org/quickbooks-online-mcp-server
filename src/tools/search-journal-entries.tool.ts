@@ -8,7 +8,11 @@ const toolDescription = "Search journal entries in QuickBooks Online that match 
 
 // Define the expected input schema for searching journal entries
 const toolSchema = z.object({
-  criteria: z.array(z.any()).optional(),
+  criteria: z.array(z.object({
+    field: z.string(),
+    value: z.union([z.string(), z.number(), z.boolean()]),
+    operator: z.enum(["=", "IN", "<", ">", "<=", ">=", "LIKE"]).optional(),
+  })).optional(),
   asc: z.string().optional(),
   desc: z.string().optional(),
   limit: z.number().optional(),

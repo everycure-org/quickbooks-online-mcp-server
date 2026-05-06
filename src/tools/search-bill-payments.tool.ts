@@ -8,7 +8,11 @@ const toolDescription = "Search bill payments in QuickBooks Online that match gi
 
 // Define the expected input schema for searching bill payments
 const toolSchema = z.object({
-  criteria: z.array(z.any()).optional(),
+  criteria: z.array(z.object({
+    field: z.string(),
+    value: z.union([z.string(), z.number(), z.boolean()]),
+    operator: z.enum(["=", "IN", "<", ">", "<=", ">=", "LIKE"]).optional(),
+  })).optional(),
   asc: z.string().optional(),
   desc: z.string().optional(),
   limit: z.number().optional(),
