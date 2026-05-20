@@ -5,8 +5,44 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { AsyncLocalStorage } from 'async_hooks';
+import { createHash } from 'crypto';
 import open from 'open';
-import { getRefreshToken as redisGetRefreshToken, setRefreshToken as redisSetRefreshToken } from './redis-token-store.js';
+import { UserSession, getSession, setSession, setRtIndex } from './redis-token-store.js';
+
+// ── Per-user session context ─────────────────────────────────────────────────
+// Each MCP request runs inside AsyncLocalStorage carrying the authenticated
+// user's session so the singleton quickbooksClient uses the right credentials.
+
+interface RequestContext extends UserSession {
+  sessionKey: string;  // Redis key: qbo:user:<sha256(bearer_token)>
+}
+
+const requestALS = new AsyncLocalStorage<RequestContext>();
+
+/** In-memory access-token cache per session (single-replica safe). */
+const accessTokenCache = new Map<string, { accessToken: string; expiry: Date }>();
+
+/**
+ * Hash a token for use as a Redis key fragment.
+ * We only need the first 32 hex chars — collision probability is negligible.
+ */
+export function tokenHash(token: string): string {
+  return createHash('sha256').update(token).digest('hex').slice(0, 32);
+}
+
+/**
+ * Run `fn` within a per-user session context.
+ * All tool handlers that call quickbooksClient.authenticate() will use the
+ * credentials from this context automatically.
+ */
+export function runWithUserSession<T>(
+  sessionKey: string,
+  session: UserSession,
+  fn: () => Promise<T>
+): Promise<T> {
+  return requestALS.run({ sessionKey, ...session }, fn);
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,6 +86,7 @@ class QuickbooksClient {
   private oauthClient: OAuthClient;
   private isAuthenticating: boolean = false;
   private redirectUri: string;
+  // Legacy single-user fields (used when no per-user ALS context is present)
   private redisTokenLoaded: boolean = false;
   private needsReauth: boolean = false;
 
@@ -266,14 +303,19 @@ class QuickbooksClient {
         // stale and will eventually stop working, silently breaking refresh.
         const newRefreshToken = token.refresh_token;
         if (newRefreshToken && newRefreshToken !== this.refreshToken) {
-          this.refreshToken = newRefreshToken;
-          // Persist to Redis (survives pod restarts) and .env (local dev fallback).
-          redisSetRefreshToken(newRefreshToken).catch(() => { /* logged inside */ });
-          try {
-            this.saveTokensToEnv();
-            console.error('[qbo-client] Refresh token rotated and persisted');
-          } catch (persistErr) {
-            console.error('[qbo-client] Failed to persist rotated refresh token to .env:', persistErr);
+          const ctx = requestALS.getStore();
+          if (ctx) {
+            // Per-user mode: update the session in ALS and Redis.
+            ctx.refreshToken = newRefreshToken;
+            const newRtHash = tokenHash(newRefreshToken);
+            setSession(ctx.sessionKey, { refreshToken: newRefreshToken, realmId: ctx.realmId }).catch(() => {});
+            setRtIndex(newRtHash, ctx.sessionKey).catch(() => {});
+            console.error(`[qbo-client] Refresh token rotated for session ${ctx.sessionKey.slice(-8)}`);
+          } else {
+            // Legacy single-user fallback
+            this.refreshToken = newRefreshToken;
+            try { this.saveTokensToEnv(); } catch { /* best effort */ }
+            console.error('[qbo-client] Refresh token rotated (single-user mode)');
           }
         }
 
@@ -309,46 +351,71 @@ class QuickbooksClient {
   }
 
   async authenticate() {
-    // On the first call, load the latest rotated token from Redis.
-    // Redis is the sole source of truth for the refresh token — it is no longer
-    // stored in GCP Secret Manager. Seed it once with:
-    //   kubectl exec -n redis redis-0 -c redis -- \
-    //     redis-cli SET qbo:refresh_token <token>
-    if (!this.redisTokenLoaded) {
-      this.redisTokenLoaded = true;
-      const redisToken = await redisGetRefreshToken();
-      if (redisToken) {
-        this.refreshToken = redisToken;
+    const ctx = requestALS.getStore();
+
+    if (ctx) {
+      // ── Per-user mode ────────────────────────────────────────────────────
+      // Check in-memory access token cache for this session.
+      const cached = accessTokenCache.get(ctx.sessionKey);
+      const now = new Date();
+      let accessToken: string;
+
+      if (cached && cached.expiry > now) {
+        accessToken = cached.accessToken;
+      } else {
+        // Temporarily set instance fields so refreshAccessToken() can use them.
+        this.refreshToken = ctx.refreshToken;
+        this.realmId = ctx.realmId;
+        const result = await this.refreshAccessToken();
+        accessToken = result.access_token;
+        accessTokenCache.set(ctx.sessionKey, {
+          accessToken,
+          expiry: new Date(now.getTime() + result.expires_in * 1000 - 60_000), // 1 min early
+        });
       }
+
+      this.quickbooksInstance = new QuickBooks(
+        this.clientId,
+        this.clientSecret,
+        accessToken,
+        false,
+        ctx.realmId,
+        this.environment === 'sandbox',
+        false,
+        null,
+        '2.0',
+        ctx.refreshToken
+      );
+      // Keep instance fields in sync for getAuthCredentials()
+      this.accessToken = accessToken;
+      this.realmId = ctx.realmId;
+      return this.quickbooksInstance;
     }
 
+    // ── Legacy single-user fallback (no ALS context) ─────────────────────
     if (!this.refreshToken) {
-      // No token in Redis or env — signal a 401 so Claude triggers its OAuth UI.
       this.needsReauth = true;
       throw new Error('QuickBooks refresh token not found — re-authorization required');
     }
 
-    // Check if token exists and is still valid
     const now = new Date();
     if (!this.accessToken || !this.accessTokenExpiry || this.accessTokenExpiry <= now) {
       const tokenResponse = await this.refreshAccessToken();
       this.accessToken = tokenResponse.access_token;
     }
-    
-    // At this point we know all tokens are available
+
     this.quickbooksInstance = new QuickBooks(
       this.clientId,
       this.clientSecret,
       this.accessToken,
-      false, // no token secret for OAuth 2.0
-      this.realmId!, // Safe to use ! here as we checked above
-      this.environment === 'sandbox', // use the sandbox?
-      false, // debug?
-      null, // minor version
-      '2.0', // oauth version
+      false,
+      this.realmId!,
+      this.environment === 'sandbox',
+      false,
+      null,
+      '2.0',
       this.refreshToken
     );
-    
     return this.quickbooksInstance;
   }
   
@@ -381,24 +448,6 @@ class QuickbooksClient {
     this.redisTokenLoaded = false; // force re-read of fresh token from Redis on next call
   }
 
-  /**
-   * Eagerly load the refresh token from Redis at startup.
-   * If Redis is empty and there is no real token in the environment, set
-   * needsReauth = true immediately so the very first incoming request returns
-   * 401 and Claude shows the "Connect to QuickBooks" button — rather than
-   * letting the error bubble up through the tool handler as text.
-   */
-  async initialize(): Promise<void> {
-    if (this.redisTokenLoaded) return;
-    this.redisTokenLoaded = true;
-    const redisToken = await redisGetRefreshToken();
-    if (redisToken) {
-      this.refreshToken = redisToken;
-    } else if (!this.refreshToken || this.refreshToken.startsWith('placeholder')) {
-      this.needsReauth = true;
-      console.error('[qbo-client] No refresh token in Redis or env — marking reauth required');
-    }
-  }
 }
 
 export const quickbooksClient = new QuickbooksClient({
