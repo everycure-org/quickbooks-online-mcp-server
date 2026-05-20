@@ -19,6 +19,7 @@ const MAX_REDIRECTS = 5;
 export interface UploadAttachmentFromUrlInput {
   file_url: string;
   file_name?: string;
+  content_type?: string;
   note?: string;
   category?: string;
   attachable_ref?: {
@@ -188,13 +189,20 @@ export async function uploadAttachmentFromUrl(
 ): Promise<ToolResponse<any>> {
   try {
     // Download the file first (before authenticating to fail fast on bad URLs)
-    const { buffer, contentType } = await downloadUrl(data.file_url, MAX_REDIRECTS);
+    const { buffer, contentType: detectedContentType } = await downloadUrl(data.file_url, MAX_REDIRECTS);
+
+    // Allow explicit override — S3/GCS presigned URLs often return application/octet-stream
+    // regardless of the actual file type.
+    const contentType = data.content_type
+      ? data.content_type.split(";")[0].trim().toLowerCase()
+      : detectedContentType;
 
     if (!ALLOWED_UPLOAD_CONTENT_TYPES.has(contentType)) {
       return {
         result: null,
         isError: true,
-        error: `Unsupported content type "${contentType}" from URL. QuickBooks only accepts: ${[...ALLOWED_UPLOAD_CONTENT_TYPES].join(", ")}`,
+        error: `Unsupported content type "${contentType}". QuickBooks only accepts: ${[...ALLOWED_UPLOAD_CONTENT_TYPES].join(", ")}. ` +
+          `The URL returned "${detectedContentType}" — if the file is a PDF/PNG/JPEG, pass the correct content_type explicitly.`,
       };
     }
 

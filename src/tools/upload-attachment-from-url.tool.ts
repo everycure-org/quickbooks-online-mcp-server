@@ -22,6 +22,12 @@ const toolSchema = z.object({
     .describe(
       "Override the file name stored in QuickBooks. Defaults to the last path segment of the URL."
     ),
+  content_type: z
+    .enum(["application/pdf", "image/png", "image/jpeg"])
+    .optional()
+    .describe(
+      "Override the MIME type. Required when the URL serves the file as application/octet-stream (common with S3/GCS presigned URLs). Inferred from the HTTP Content-Type header otherwise."
+    ),
   note: z.string().optional().describe("Optional note about the attachment"),
   category: z.string().optional().describe("Optional attachment category"),
   attachable_ref: z
