@@ -380,6 +380,25 @@ class QuickbooksClient {
     this.needsReauth = false;
     this.redisTokenLoaded = false; // force re-read of fresh token from Redis on next call
   }
+
+  /**
+   * Eagerly load the refresh token from Redis at startup.
+   * If Redis is empty and there is no real token in the environment, set
+   * needsReauth = true immediately so the very first incoming request returns
+   * 401 and Claude shows the "Connect to QuickBooks" button — rather than
+   * letting the error bubble up through the tool handler as text.
+   */
+  async initialize(): Promise<void> {
+    if (this.redisTokenLoaded) return;
+    this.redisTokenLoaded = true;
+    const redisToken = await redisGetRefreshToken();
+    if (redisToken) {
+      this.refreshToken = redisToken;
+    } else if (!this.refreshToken || this.refreshToken.startsWith('placeholder')) {
+      this.needsReauth = true;
+      console.error('[qbo-client] No refresh token in Redis or env — marking reauth required');
+    }
+  }
 }
 
 export const quickbooksClient = new QuickbooksClient({
