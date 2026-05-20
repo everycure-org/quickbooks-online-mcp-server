@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import open from 'open';
+import { getRefreshToken as redisGetRefreshToken, setRefreshToken as redisSetRefreshToken } from './redis-token-store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +50,7 @@ class QuickbooksClient {
   private oauthClient: OAuthClient;
   private isAuthenticating: boolean = false;
   private redirectUri: string;
+  private redisTokenLoaded: boolean = false;
 
   constructor(config: {
     clientId: string;
@@ -264,13 +266,13 @@ class QuickbooksClient {
         const newRefreshToken = token.refresh_token;
         if (newRefreshToken && newRefreshToken !== this.refreshToken) {
           this.refreshToken = newRefreshToken;
+          // Persist to Redis (survives pod restarts) and .env (local dev fallback).
+          redisSetRefreshToken(newRefreshToken).catch(() => { /* logged inside */ });
           try {
             this.saveTokensToEnv();
-            console.error('[qbo-client] Refresh token rotated and persisted to .env');
+            console.error('[qbo-client] Refresh token rotated and persisted');
           } catch (persistErr) {
-            // Don't fail the whole refresh just because we couldn't write to
-            // disk; the in-memory token is still valid for this process.
-            console.error('[qbo-client] Failed to persist rotated refresh token:', persistErr);
+            console.error('[qbo-client] Failed to persist rotated refresh token to .env:', persistErr);
           }
         }
 
@@ -298,6 +300,17 @@ class QuickbooksClient {
   }
 
   async authenticate() {
+    // On the first call, try to load the latest rotated token from Redis.
+    // This ensures pod restarts pick up the most recent token rather than the
+    // bootstrap value baked into the GCP Secret Manager secret.
+    if (!this.redisTokenLoaded) {
+      this.redisTokenLoaded = true;
+      const redisToken = await redisGetRefreshToken();
+      if (redisToken) {
+        this.refreshToken = redisToken;
+      }
+    }
+
     if (!this.refreshToken || !this.realmId) {
       await this.startOAuthFlow();
       

@@ -24,6 +24,7 @@
         "@modelcontextprotocol/sdk": "^1.6.0",
         "dotenv": "^16.4.7",
         "intuit-oauth": "^4.0.0",
+        "ioredis": "^5.10.1",
         "node-quickbooks": "^2.0.43",
         "open": "^9.1.0",
         "zod": "^3.24.2"
