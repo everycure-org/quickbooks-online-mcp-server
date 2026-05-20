@@ -37,9 +37,9 @@ function getClient(): RedisClient | null {
 
   client = new Redis(url, {
     connectTimeout: CONNECT_TIMEOUT_MS,
-    lazyConnect: true,
-    maxRetriesPerRequest: 1,
-    enableOfflineQueue: false,
+    maxRetriesPerRequest: 2,
+    enableOfflineQueue: true,
+    retryStrategy: (times: number) => (times <= 3 ? Math.min(times * 200, 1000) : null),
   });
 
   client.on("error", (err: Error) => {
