@@ -182,6 +182,7 @@ import { GetAttachableTool } from "./tools/get-attachable.tool.js";
 import { UpdateAttachableTool } from "./tools/update-attachable.tool.js";
 import { DeleteAttachableTool } from "./tools/delete-attachable.tool.js";
 import { SearchAttachablesTool } from "./tools/search-attachables.tool.js";
+import { UploadAttachmentFromUrlTool } from "./tools/upload-attachment-from-url.tool.js";
 
 // Financial Report tools
 import { GetBalanceSheetTool } from "./tools/get-balance-sheet.tool.js";
@@ -406,6 +407,7 @@ const main = async () => {
   RegisterTool(server, UpdateAttachableTool);
   RegisterTool(server, DeleteAttachableTool);
   RegisterTool(server, SearchAttachablesTool);
+  RegisterTool(server, UploadAttachmentFromUrlTool);
 
   // Add financial report tools
   RegisterTool(server, GetBalanceSheetTool);
