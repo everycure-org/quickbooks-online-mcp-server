@@ -322,23 +322,10 @@ class QuickbooksClient {
       }
     }
 
-    if (!this.refreshToken && this.realmId) {
-      // We have a realmId (server context) but no refresh token — Redis is empty.
-      // Starting a browser OAuth flow in a headless pod would hang forever.
-      throw new Error(
-        'QuickBooks refresh token not found in Redis. ' +
-        'Seed it once with: kubectl exec -n redis redis-0 -c redis -- ' +
-        'redis-cli SET qbo:refresh_token <your_refresh_token>'
-      );
-    }
-
-    if (!this.refreshToken || !this.realmId) {
-      await this.startOAuthFlow();
-      
-      // Verify we have both tokens after OAuth flow
-      if (!this.refreshToken || !this.realmId) {
-        throw new Error('Failed to obtain required tokens from OAuth flow');
-      }
+    if (!this.refreshToken) {
+      // No token in Redis or env — signal a 401 so Claude triggers its OAuth UI.
+      this.needsReauth = true;
+      throw new Error('QuickBooks refresh token not found — re-authorization required');
     }
 
     // Check if token exists and is still valid
