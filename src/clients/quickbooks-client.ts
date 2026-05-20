@@ -51,6 +51,7 @@ class QuickbooksClient {
   private isAuthenticating: boolean = false;
   private redirectUri: string;
   private redisTokenLoaded: boolean = false;
+  private needsReauth: boolean = false;
 
   constructor(config: {
     clientId: string;
@@ -290,6 +291,14 @@ class QuickbooksClient {
         };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
+        // invalid_grant means the refresh token is expired or revoked.
+        // Set the flag so the HTTP layer can return 401 and trigger Claude's re-auth UI.
+        if (message.toLowerCase().includes('invalid_grant') || message.includes('400')) {
+          this.needsReauth = true;
+          this.refreshToken = undefined;
+          this.accessToken = undefined;
+          this.accessTokenExpiry = undefined;
+        }
         throw new Error(`Failed to refresh Quickbooks token: ${message}`);
       } finally {
         this.refreshInFlight = undefined;
@@ -300,15 +309,27 @@ class QuickbooksClient {
   }
 
   async authenticate() {
-    // On the first call, try to load the latest rotated token from Redis.
-    // This ensures pod restarts pick up the most recent token rather than the
-    // bootstrap value baked into the GCP Secret Manager secret.
+    // On the first call, load the latest rotated token from Redis.
+    // Redis is the sole source of truth for the refresh token — it is no longer
+    // stored in GCP Secret Manager. Seed it once with:
+    //   kubectl exec -n redis redis-0 -c redis -- \
+    //     redis-cli SET qbo:refresh_token <token>
     if (!this.redisTokenLoaded) {
       this.redisTokenLoaded = true;
       const redisToken = await redisGetRefreshToken();
       if (redisToken) {
         this.refreshToken = redisToken;
       }
+    }
+
+    if (!this.refreshToken && this.realmId) {
+      // We have a realmId (server context) but no refresh token — Redis is empty.
+      // Starting a browser OAuth flow in a headless pod would hang forever.
+      throw new Error(
+        'QuickBooks refresh token not found in Redis. ' +
+        'Seed it once with: kubectl exec -n redis redis-0 -c redis -- ' +
+        'redis-cli SET qbo:refresh_token <your_refresh_token>'
+      );
     }
 
     if (!this.refreshToken || !this.realmId) {
@@ -360,6 +381,17 @@ class QuickbooksClient {
       realmId: this.realmId,
       isSandbox: this.environment === 'sandbox',
     };
+  }
+
+  /** True when the refresh token is expired/revoked and the user must re-authorize. */
+  isReauthNeeded(): boolean {
+    return this.needsReauth;
+  }
+
+  /** Called by the /token handler after a successful OAuth re-authorization. */
+  clearReauthFlag(): void {
+    this.needsReauth = false;
+    this.redisTokenLoaded = false; // force re-read of fresh token from Redis on next call
   }
 }
 
