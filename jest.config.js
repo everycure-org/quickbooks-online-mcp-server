@@ -12,6 +12,10 @@ export default {
     'src/**/*.ts',
     '!src/**/*.d.ts',
     '!src/types/**/*.ts',
+    // Tool modules are thin zod-schema + handler wrappers. Their schemas are
+    // exercised by tests/unit/tools/tool-schemas.test.ts; logic lives in
+    // handlers/ and helpers/, which carry the coverage threshold.
+    '!src/tools/**/*.ts',
   ],
   coverageThreshold: {
     global: {

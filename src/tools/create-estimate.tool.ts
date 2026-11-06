@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const toolName = "create_estimate";
 const toolDescription = "Create an estimate in QuickBooks Online.";
-const toolSchema = z.object({ estimate: z.any() });
+const toolSchema = z.object({ estimate: z.object({}).passthrough().describe("QuickBooks Estimate object to create, using QBO API field names") });
 
 const toolHandler = async (args: any) => {
   const response = await createQuickbooksEstimate(args.params.estimate);

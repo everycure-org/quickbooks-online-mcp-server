@@ -8,7 +8,7 @@ const toolDescription = "Create a journal entry in QuickBooks Online.";
 
 // Define the expected input schema for creating a journal entry
 const toolSchema = z.object({
-  journalEntry: z.any(),
+  journalEntry: z.object({}).passthrough().describe("QuickBooks JournalEntry object to create, using QBO API field names"),
 });
 
 type ToolParams = z.infer<typeof toolSchema>;

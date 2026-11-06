@@ -1,6 +1,7 @@
 import { searchQuickbooksAccounts } from "../handlers/search-quickbooks-accounts.handler.js";
 import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
+import { buildSearchCriteriaSchema } from "../helpers/search-criteria-schema.js";
 
 const toolName = "search_accounts";
 const toolDescription = "Search chart‑of‑accounts entries using criteria.";
@@ -163,8 +164,8 @@ function normalizeAccountCriteria(criteria: any): any {
   return criteria;
 }
 
-// Schema exposed to function definition – use broad schema to sidestep $ref errors
-const criteriaSchema = z.any();
+// Schema exposed to clients: explicit, fully typed criteria shape
+const criteriaSchema = buildSearchCriteriaSchema(ALLOWED_FILTER_FIELDS, ALLOWED_SORT_FIELDS);
 
 const toolSchema = z.object({ criteria: criteriaSchema });
 

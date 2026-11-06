@@ -1,6 +1,7 @@
 import { searchQuickbooksInvoices } from "../handlers/search-quickbooks-invoices.handler.js";
 import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
+import { buildSearchCriteriaSchema } from "../helpers/search-criteria-schema.js";
 
 const toolName = "search_invoices";
 const toolDescription = "Search invoices in QuickBooks Online using criteria (maps to node-quickbooks findInvoices).";
@@ -97,7 +98,7 @@ const RUNTIME_CRITERIA_SCHEMA = z.union([
 ]);
 
 // Exposed schema – use broad type to prevent deep $ref issues
-const toolSchema = z.object({ criteria: z.any() });
+const toolSchema = z.object({ criteria: buildSearchCriteriaSchema(ALLOWED_FILTER_FIELDS, ALLOWED_SORT_FIELDS) });
 
 const toolHandler = async ({ params }: any) => {
   const { criteria } = params;

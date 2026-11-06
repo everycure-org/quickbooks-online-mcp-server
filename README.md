@@ -5,11 +5,11 @@
 **A comprehensive Model Context Protocol (MCP) server for QuickBooks Online**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tools](https://img.shields.io/badge/Tools-144-green.svg)](#available-tools)
+[![Tools](https://img.shields.io/badge/Tools-146-green.svg)](#available-tools)
 [![Entities](https://img.shields.io/badge/Entities-29-orange.svg)](#entities)
 [![Reports](https://img.shields.io/badge/Reports-11-purple.svg)](#reports)
 [![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen.svg)](#testing)
-[![Tests](https://img.shields.io/badge/Tests-396-blue.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-662-blue.svg)](#testing)
 
 [Quick Start](#quick-start) | [Available Tools](#available-tools) | [Authentication](#authentication) | [Documentation](#documentation)
 
@@ -23,7 +23,7 @@ This MCP server provides complete QuickBooks Online API integration for Claude C
 
 ### Key Features
 
-- **144 Total Tools** - Complete coverage of QuickBooks Online API
+- **146 Total Tools** - Complete coverage of QuickBooks Online API
 - **29 Entity Types** - Full CRUD operations (Create, Read, Update, Delete, Search)
 - **11 Financial Reports** - Balance Sheet, P&L, Cash Flow, and more
 - **OAuth 2.0 Authentication** - Secure token-based authentication
@@ -59,12 +59,13 @@ cp .env.example .env
 ```env
 QUICKBOOKS_CLIENT_ID=your_client_id
 QUICKBOOKS_CLIENT_SECRET=your_client_secret
-QUICKBOOKS_ENVIRONMENT=sandbox
+QBO_ENVIRONMENT=sandbox
 QUICKBOOKS_REFRESH_TOKEN=your_refresh_token
 QUICKBOOKS_REALM_ID=your_realm_id
 ```
 
-`.env` is gitignored so your real credentials stay local.
+`.env` is gitignored so your real credentials stay local. Write tools are off by default; see
+[Sales receipt writes](#sales-receipt-writes) for `QBO_WRITE_ENABLED` and related settings.
 
 ### Claude Code Integration
 
@@ -153,7 +154,7 @@ Complete CRUD operations are available for all entity types:
 
 | Tool | Description |
 |------|-------------|
-| `create_customer` | Create a new customer |
+| `create_customer` | Create a customer or sub-customer, idempotent by DisplayName (see [Sales receipt writes](#sales-receipt-writes)) |
 | `get_customer` | Get customer by ID |
 | `update_customer` | Update customer details |
 | `delete_customer` | Delete a customer |
@@ -215,10 +216,12 @@ Complete CRUD operations are available for all entity types:
 
 | Tool | Description |
 |------|-------------|
-| `create_sales_receipt` | Create a sales receipt |
+| `create_sales_receipt` | Create a donation sales receipt, idempotently (see [Sales receipt writes](#sales-receipt-writes)) |
 | `get_sales_receipt` | Get sales receipt by ID |
+| `find_sales_receipt_by_doc_number` | Find a sales receipt by DocNumber; returns the receipt or null |
+| `void_sales_receipt` | Void a sales receipt (keeps the audit trail) |
 | `update_sales_receipt` | Update sales receipt |
-| `delete_sales_receipt` | Void a sales receipt |
+| `delete_sales_receipt` | Delete a sales receipt |
 | `search_sales_receipts` | Search sales receipts |
 | `create_credit_memo` | Create a credit memo |
 | `get_credit_memo` | Get credit memo by ID |
@@ -342,6 +345,86 @@ Complete CRUD operations are available for all entity types:
 | `search_attachables` | Search attachments |
 
 </details>
+
+---
+
+## Sales receipt writes
+
+`create_sales_receipt`, `void_sales_receipt` and `create_customer` are built for an
+automated routine that books donations (HubSpot gift records) into QBO. They are safe to
+call repeatedly and never write unless the server is explicitly configured to.
+
+All tools take a single `params` object. A client that sends `params` as a JSON string is
+also accepted.
+
+### Write guards
+
+| Variable | Default | Effect |
+|---|---|---|
+| `QBO_ENVIRONMENT` | `sandbox` | `sandbox` -> `https://sandbox-quickbooks.api.intuit.com`, `production` -> `https://quickbooks.api.intuit.com`. Falls back to `QUICKBOOKS_ENVIRONMENT`; if both are set they must agree. |
+| `QBO_WRITE_ENABLED` | `false` | When not `true`, every write tool returns a dry run regardless of input and logs a warning. |
+| `QBO_PRODUCTION_WRITES_CONFIRMED` | `false` | In production, `create_sales_receipt` and `void_sales_receipt` are refused unless this is also `true`. |
+| `QBO_ALLOWED_NEGATIVE_ITEM_IDS` | empty | Comma separated item IDs allowed on a negative line (the merchant/platform fees item). Empty means no negative lines. |
+
+To enable real writes against the sandbox: `QBO_ENVIRONMENT=sandbox QBO_WRITE_ENABLED=true
+QBO_ALLOWED_NEGATIVE_ITEM_IDS=<fees item id>`. Production additionally needs
+`QBO_ENVIRONMENT=production QBO_PRODUCTION_WRITES_CONFIRMED=true`.
+
+Every write-tool outcome is logged to stderr as one line, `[qbo-write] {...}`, with the tool,
+idempotency key, doc number, QBO ID, environment and result (`created`, `already_exists`,
+`dry_run`, `voided`, `already_voided`, `error`). Logs carry identifiers only: no memo text,
+names, emails, addresses, QBO fault text or tokens.
+
+There are deliberately no tools here for creating or changing accounts, items or classes on
+the hosted deployment; finance owns the chart of accounts.
+
+### `create_sales_receipt`
+
+`POST /v3/company/{realmId}/salesreceipt?requestid={idempotency_key}&minorversion=75`
+
+| Field | Type | Required | Maps to |
+|---|---|---|---|
+| `idempotency_key` | string (max 50) | yes | `requestid` query param. Use the HubSpot Gift record ID. |
+| `doc_number` | string (max 21) | yes | `DocNumber`. Use the HubSpot Gift record ID. |
+| `txn_date` | `YYYY-MM-DD` | yes | `TxnDate` (donation date) |
+| `customer_id` | string | yes | `CustomerRef.value` |
+| `deposit_to_account_id` | string | yes | `DepositToAccountRef.value`; must be an Undeposited Funds account |
+| `department_id` | string | yes | `DepartmentRef.value` |
+| `private_note` | string (max 4000) | yes | `PrivateNote`; IDs only |
+| `lines` | array, min 1 | yes | `Line[]`: `{ item_id, class_id, amount, description? }` -> `SalesItemLineDetail` with `ItemRef`, `ClassRef`, `Qty: 1`, `UnitPrice: amount` |
+| `dry_run` | boolean | no, default `true` | Validate and return the payload without writing |
+
+Before writing, the tool checks (and writes nothing if any fails):
+
+- every amount is finite, non-zero and has at most 2 decimal places, and the total is greater than 0;
+- at most one line is negative, and only on an item in `QBO_ALLOWED_NEGATIVE_ITEM_IDS`;
+- the customer, deposit account, department and every item and class exist and are active;
+- the deposit account has `AccountSubType = UndepositedFunds`, so a receipt never posts straight to a bank account;
+- no sales receipt with the same `DocNumber` exists. If one does, it is returned with `status: "already_exists"`.
+
+`dry_run` still does these read-only lookups. Output:
+`{ status: "created" | "already_exists" | "dry_run", id, doc_number, total_amt, txn_date, payload, environment, dry_run_reason?, sales_receipt? }`.
+
+### `get_sales_receipt` / `find_sales_receipt_by_doc_number`
+
+`get_sales_receipt` takes `{ id }`. `find_sales_receipt_by_doc_number` takes `{ doc_number }`
+and returns the receipt or `null`.
+
+### `void_sales_receipt`
+
+Takes `{ id, reason }`. Reads the receipt for its current `SyncToken`, then sends
+`POST /salesreceipt?operation=update&include=void` (a sparse update; `operation=void` only
+voids a QuickBooks Payments card charge and fails on ordinary receipts) with `Id`, `SyncToken` and the reason appended to
+`PrivateNote` (with a `[VOIDED by MCP]` marker). A receipt that already carries the marker
+returns `status: "already_voided"`. Voiding keeps the record and audit trail; use it instead of
+delete.
+
+### `create_customer`
+
+Takes `{ display_name, company_name?, parent_id?, dry_run? (default true) }`. With
+`parent_id` it creates a sub-customer (`ParentRef`, `Job: true`, `BillWithParent: true`).
+It first looks up the DisplayName (active and inactive); if it exists the customer is
+returned with `status: "already_exists"`.
 
 ---
 

@@ -7,7 +7,6 @@ jest.unstable_mockModule('../../../src/clients/quickbooks-client', () => ({
 }));
 
 // Dynamic imports after mock setup
-const { createQuickbooksSalesReceipt } = await import('../../../src/handlers/create-quickbooks-sales-receipt.handler');
 const { getQuickbooksSalesReceipt } = await import('../../../src/handlers/get-quickbooks-sales-receipt.handler');
 const { updateQuickbooksSalesReceipt } = await import('../../../src/handlers/update-quickbooks-sales-receipt.handler');
 const { deleteQuickbooksSalesReceipt } = await import('../../../src/handlers/delete-quickbooks-sales-receipt.handler');
@@ -16,60 +15,6 @@ const { searchQuickbooksSalesReceipts } = await import('../../../src/handlers/se
 describe('SalesReceipt Handlers', () => {
   beforeEach(() => {
     resetAllMocks();
-  });
-
-  describe('createQuickbooksSalesReceipt', () => {
-    it('should create a sales receipt successfully', async () => {
-      const mockReceipt = { Id: '123', TotalAmt: 250 };
-      mockQuickBooksInstance.createSalesReceipt.mockImplementation((payload: any, cb: any) => cb(null, mockReceipt));
-
-      const result = await createQuickbooksSalesReceipt({
-        customer_ref: 'cust-1',
-        line_items: [{ item_ref: 'item-1', qty: 1, unit_price: 250 }]
-      });
-
-      expect(result.isError).toBe(false);
-      expect(result.result).toEqual(mockReceipt);
-    });
-
-    it('should handle API errors', async () => {
-      mockQuickBooksInstance.createSalesReceipt.mockImplementation((payload: any, cb: any) =>
-        cb(new Error('Validation error'), null)
-      );
-
-      const result = await createQuickbooksSalesReceipt({ customer_ref: 'cust-1', line_items: [] });
-
-      expect(result.isError).toBe(true);
-    });
-
-    it('should handle authentication errors', async () => {
-      (mockQuickbooksClient.authenticate as any).mockRejectedValue(new Error('Auth failed'));
-
-      const result = await createQuickbooksSalesReceipt({ customer_ref: 'cust-1', line_items: [] });
-
-      expect(result.isError).toBe(true);
-      expect(result.error).toContain('Auth failed');
-    });
-
-    it('should create with all optional fields', async () => {
-      const mockReceipt = { Id: '123', TotalAmt: 500 };
-      mockQuickBooksInstance.createSalesReceipt.mockImplementation((payload: any, cb: any) => cb(null, mockReceipt));
-
-      const result = await createQuickbooksSalesReceipt({
-        customer_ref: 'cust-1',
-        line_items: [
-          { item_ref: 'item-1', qty: 2, unit_price: 250, description: 'Test item' }
-        ],
-        payment_method_ref: 'pm-1',
-        deposit_to_account_ref: 'acc-1',
-        txn_date: '2024-01-15',
-        doc_number: 'SR-001',
-        private_note: 'Test sales receipt'
-      });
-
-      expect(result.isError).toBe(false);
-      expect(result.result).toEqual(mockReceipt);
-    });
   });
 
   describe('getQuickbooksSalesReceipt', () => {
