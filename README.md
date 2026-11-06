@@ -400,6 +400,9 @@ Before writing, the tool checks (and writes nothing if any fails):
 - at most one line is negative, and only on an item in `QBO_ALLOWED_NEGATIVE_ITEM_IDS`;
 - the customer, deposit account, department and every item and class exist and are active;
 - the deposit account has `AccountSubType = UndepositedFunds`, so a receipt never posts straight to a bank account;
+- the company has location tracking on (`TrackDepartments`) and class tracking set to one per row
+  (`ClassTrackingPerTxnLine`). QBO otherwise accepts `DepartmentRef` and line `ClassRef` but silently
+  drops them. Turn both on under Account and settings > Advanced > Categories;
 - no sales receipt with the same `DocNumber` exists. If one does, it is returned with `status: "already_exists"`.
 
 `dry_run` still does these read-only lookups. Output:

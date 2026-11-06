@@ -19,6 +19,8 @@ export interface FakeQbo {
   queryRows: Record<string, Record<string, any>[]>;
   /** Response body for POSTs, keyed by resource path (e.g. "salesreceipt"). */
   postResponses: Record<string, any>;
+  /** Company preferences served by GET /preferences (tracking on by default). */
+  preferences: Record<string, any>;
   posts(): RecordedCall[];
 }
 
@@ -32,6 +34,7 @@ export function createFakeQbo(): FakeQbo {
     entities: new Map(),
     queryRows: {},
     postResponses: {},
+    preferences: { AccountingInfoPrefs: { TrackDepartments: true, ClassTrackingPerTxnLine: true } },
     posts: () => fake.calls.filter((c) => c.method === 'POST'),
     fetch: jest.fn(),
   };
@@ -46,6 +49,9 @@ export function createFakeQbo(): FakeQbo {
       const q = url.searchParams.get('query') ?? '';
       const entity = /from (\w+)/i.exec(q)?.[1] ?? '';
       return json(200, { QueryResponse: { [entity]: fake.queryRows[entity] ?? [] } });
+    }
+    if (method === 'GET' && resource === 'preferences') {
+      return json(200, { Preferences: fake.preferences });
     }
     if (method === 'GET') {
       const [entityLower, id] = resource.split('/');

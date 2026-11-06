@@ -233,6 +233,29 @@ describe('createQuickbooksSalesReceipt', () => {
     expect(fake.posts()).toHaveLength(0);
   });
 
+  it('refuses to write when location (department) tracking is off', async () => {
+    fake.preferences = { AccountingInfoPrefs: { TrackDepartments: false, ClassTrackingPerTxnLine: true } };
+    const res = await createQuickbooksSalesReceipt(baseInput());
+    expect(res.isError).toBe(true);
+    expect(res.error).toContain("'Track locations' is off");
+    expect(fake.posts()).toHaveLength(0);
+  });
+
+  it('refuses to write when class tracking is not one per row', async () => {
+    fake.preferences = { AccountingInfoPrefs: { TrackDepartments: true, ClassTrackingPerTxn: true, ClassTrackingPerTxnLine: false } };
+    const res = await createQuickbooksSalesReceipt(baseInput());
+    expect(res.isError).toBe(true);
+    expect(res.error).toContain("'One to each row'");
+    expect(fake.posts()).toHaveLength(0);
+  });
+
+  it('refuses when QBO returns no preferences at all', async () => {
+    fake.preferences = undefined as any;
+    const res = await createQuickbooksSalesReceipt(baseInput({ dry_run: true }));
+    expect(res.isError).toBe(true);
+    expect(res.error).toContain('Track locations');
+  });
+
   it('refuses a deposit account that is not Undeposited Funds (e.g. a bank account)', async () => {
     fake.entities.set(`Account:${IDS.account}`, { Id: IDS.account, Active: true, AccountSubType: 'Checking' });
     const res = await createQuickbooksSalesReceipt(baseInput());
