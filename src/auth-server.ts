@@ -28,7 +28,9 @@ async function main() {
 
   try {
     // The authenticate method will trigger the OAuth flow if no tokens exist
-    await quickbooksClient.authenticate();
+    // authenticate() refuses to start an interactive flow when no refresh
+    // token is configured (servers must return 401 instead), so start it here.
+    await quickbooksClient.refreshAccessToken();
 
     console.log('\n✓ Successfully authenticated with QuickBooks!');
     console.log('Tokens have been saved to your .env file.');

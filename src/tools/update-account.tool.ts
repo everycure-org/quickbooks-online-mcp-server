@@ -7,7 +7,7 @@ const toolDescription = "Update an existing chart‑of‑accounts entry in Quick
 
 const toolSchema = z.object({
   account_id: z.string().min(1),
-  patch: z.record(z.any()),
+  patch: z.record(z.unknown()).describe("Fields to change, using QBO API field names"),
 });
 
 const toolHandler = async ({ params }: any) => {

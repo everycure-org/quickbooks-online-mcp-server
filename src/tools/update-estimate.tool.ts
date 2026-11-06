@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const toolName = "update_estimate";
 const toolDescription = "Update an estimate in QuickBooks Online.";
-const toolSchema = z.object({ estimate: z.any() });
+const toolSchema = z.object({ estimate: z.object({}).passthrough().describe("QuickBooks Estimate object to update (include Id and SyncToken), using QBO API field names") });
 
 const toolHandler = async (args: any) => {
   const response = await updateQuickbooksEstimate(args.params.estimate);

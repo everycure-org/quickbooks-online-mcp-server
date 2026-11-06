@@ -35,6 +35,20 @@ describe('Bill Handlers', () => {
       expect(result.result).toEqual(mockBill);
     });
 
+    it('keeps already nested lines and lines without an AccountRef unchanged', async () => {
+      let sent: any;
+      mockQuickBooksInstance.createBill.mockImplementation((payload: any, cb: any) => {
+        sent = payload;
+        cb(null, { Id: '2' });
+      });
+      const nested = { Amount: 1, DetailType: 'ItemBasedExpenseLineDetail', ItemBasedExpenseLineDetail: { ItemRef: { value: '9' } } };
+      const bare = { Amount: 2, DetailType: 'AccountBasedExpenseLineDetail' };
+
+      await createQuickbooksBill({ Line: [nested, bare], VendorRef: { value: '56' } });
+
+      expect(sent.Line).toEqual([nested, bare]);
+    });
+
     it('should handle API errors', async () => {
       mockQuickBooksInstance.createBill.mockImplementation((_payload: any, cb: any) =>
         cb(new Error('SAXParseException: Premature end of file'), null)

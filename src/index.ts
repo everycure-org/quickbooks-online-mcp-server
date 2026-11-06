@@ -83,6 +83,8 @@ import { GetSalesReceiptTool } from "./tools/get-sales-receipt.tool.js";
 import { UpdateSalesReceiptTool } from "./tools/update-sales-receipt.tool.js";
 import { DeleteSalesReceiptTool } from "./tools/delete-sales-receipt.tool.js";
 import { SearchSalesReceiptsTool } from "./tools/search-sales-receipts.tool.js";
+import { FindSalesReceiptByDocNumberTool } from "./tools/find-sales-receipt-by-doc-number.tool.js";
+import { VoidSalesReceiptTool } from "./tools/void-sales-receipt.tool.js";
 
 // Credit Memo tools
 import { CreateCreditMemoTool } from "./tools/create-credit-memo.tool.js";
@@ -308,6 +310,8 @@ const main = async () => {
   RegisterTool(server, UpdateSalesReceiptTool);
   RegisterTool(server, DeleteSalesReceiptTool);
   RegisterTool(server, SearchSalesReceiptsTool);
+  RegisterTool(server, FindSalesReceiptByDocNumberTool);
+  RegisterTool(server, VoidSalesReceiptTool);
 
   // Add tools for credit memos
   RegisterTool(server, CreateCreditMemoTool);

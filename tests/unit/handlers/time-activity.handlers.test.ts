@@ -131,6 +131,18 @@ describe('TimeActivity Handlers', () => {
       expect(result.isError).toBe(false);
     });
 
+    it('should send ItemRef when item_ref is given', async () => {
+      let sent: any;
+      mockQuickBooksInstance.updateTimeActivity.mockImplementation((payload: any, cb: any) => {
+        sent = payload;
+        cb(null, { Id: '123' });
+      });
+
+      await updateQuickbooksTimeActivity({ id: '123', sync_token: '0', item_ref: '7' });
+
+      expect(sent.ItemRef).toEqual({ value: '7' });
+    });
+
     it('should update a time activity with all optional fields', async () => {
       const mockUpdated = { Id: '123', Hours: 8, Minutes: 30, Description: 'Updated task' };
       mockQuickBooksInstance.updateTimeActivity.mockImplementation((payload: any, cb: any) => cb(null, mockUpdated));

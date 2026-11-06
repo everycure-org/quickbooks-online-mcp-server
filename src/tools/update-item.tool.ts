@@ -7,7 +7,7 @@ const toolDescription = "Update an existing item in Quickbooks by ID (sparse upd
 
 const toolSchema = z.object({
   item_id: z.string().min(1),
-  patch: z.record(z.any()),
+  patch: z.record(z.unknown()).describe("Fields to change, using QBO API field names"),
 });
 
 const toolHandler = async ({ params }: any) => {

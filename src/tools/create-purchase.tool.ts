@@ -8,7 +8,7 @@ const toolDescription = "Create a purchase in QuickBooks Online.";
 
 // Define the expected input schema for creating a purchase
 const toolSchema = z.object({
-  purchase: z.any(),
+  purchase: z.object({}).passthrough().describe("QuickBooks Purchase object to create, using QBO API field names"),
 });
 
 type ToolParams = z.infer<typeof toolSchema>;

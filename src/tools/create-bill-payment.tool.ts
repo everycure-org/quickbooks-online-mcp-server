@@ -8,7 +8,7 @@ const toolDescription = "Create a bill payment in QuickBooks Online.";
 
 // Define the expected input schema for creating a bill payment
 const toolSchema = z.object({
-  billPayment: z.any(),
+  billPayment: z.object({}).passthrough().describe("QuickBooks BillPayment object to create, using QBO API field names"),
 });
 
 type ToolParams = z.infer<typeof toolSchema>;

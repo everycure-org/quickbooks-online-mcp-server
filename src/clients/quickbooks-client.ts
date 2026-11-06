@@ -9,6 +9,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { createHash } from 'crypto';
 import open from 'open';
 import { UserSession, getSession, setSession, setRtIndex } from './redis-token-store.js';
+import { getQboEnvironment } from '../helpers/qbo-config.js';
 
 // ── Per-user session context ─────────────────────────────────────────────────
 // Each MCP request runs inside AsyncLocalStorage carrying the authenticated
@@ -65,7 +66,7 @@ const client_id = process.env.QUICKBOOKS_CLIENT_ID;
 const client_secret = process.env.QUICKBOOKS_CLIENT_SECRET;
 const refresh_token = process.env.QUICKBOOKS_REFRESH_TOKEN;
 const realm_id = process.env.QUICKBOOKS_REALM_ID;
-const environment = process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox';
+const environment = getQboEnvironment();
 // Fix for Issue #5: Use env var with underscore (QUICKBOOKS_REDIRECT_URI)
 const redirect_uri = process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:8000/callback';
 

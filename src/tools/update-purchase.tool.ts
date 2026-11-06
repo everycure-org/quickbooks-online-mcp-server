@@ -8,7 +8,7 @@ const toolDescription = "Update a purchase in QuickBooks Online.";
 
 // Define the expected input schema for updating a purchase
 const toolSchema = z.object({
-  purchase: z.any(),
+  purchase: z.object({}).passthrough().describe("QuickBooks Purchase object to update (include Id and SyncToken), using QBO API field names"),
 });
 
 type ToolParams = z.infer<typeof toolSchema>;

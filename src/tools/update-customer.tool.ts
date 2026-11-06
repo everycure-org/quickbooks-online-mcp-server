@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const toolName = "update_customer";
 const toolDescription = "Update an existing customer in QuickBooks Online.";
-const toolSchema = z.object({ customer: z.any() });
+const toolSchema = z.object({ customer: z.object({}).passthrough().describe("QuickBooks Customer object to update (include Id and SyncToken), using QBO API field names") });
 
 type ToolParams = z.infer<typeof toolSchema>;
 

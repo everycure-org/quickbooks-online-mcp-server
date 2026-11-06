@@ -8,7 +8,15 @@ const toolDescription = "Delete (make inactive) a journal entry in QuickBooks On
 
 // Define the expected input schema for deleting a journal entry
 const toolSchema = z.object({
-  idOrEntity: z.any(),
+  idOrEntity: z
+    .union([
+      z.string().min(1).describe("Entity ID"),
+      z
+        .object({ Id: z.string().min(1), SyncToken: z.string() })
+        .passthrough()
+        .describe("Entity object with at least Id and SyncToken"),
+    ])
+    .describe("Entity ID, or the entity object with Id and SyncToken"),
 });
 
 type ToolParams = z.infer<typeof toolSchema>;

@@ -8,7 +8,7 @@ const toolDescription = "Create an employee in QuickBooks Online.";
 
 // Define the expected input schema for creating an employee
 const toolSchema = z.object({
-  employee: z.any(),
+  employee: z.object({}).passthrough().describe("QuickBooks Employee object to create, using QBO API field names"),
 });
 
 type ToolParams = z.infer<typeof toolSchema>;
