@@ -115,13 +115,28 @@ async function validateReferences(input: CreateSalesReceiptInput): Promise<void>
   const itemIds = [...new Set(input.lines.map((l) => l.item_id))];
   const classIds = [...new Set(input.lines.map((l) => l.class_id))];
 
-  const [, account] = await Promise.all([
+  const [prefs, , account] = await Promise.all([
+    qboRequest("GET", "preferences"),
     checkActive("Customer", input.customer_id, "customer", problems),
     checkActive("Account", input.deposit_to_account_id, "deposit account", problems),
     checkActive("Department", input.department_id, "department", problems),
     ...itemIds.map((id) => checkActive("Item", id, "item", problems)),
     ...classIds.map((id) => checkActive("Class", id, "class", problems)),
   ]);
+
+  // QBO accepts DepartmentRef/ClassRef when tracking is off and silently drops
+  // them, which would post receipts that P&L-by-class/location reports miss.
+  const accounting = prefs?.Preferences?.AccountingInfoPrefs ?? {};
+  if (accounting.TrackDepartments !== true) {
+    problems.push(
+      "QBO company setting 'Track locations' is off, so DepartmentRef would be dropped; turn it on (Account and settings > Advanced > Categories)"
+    );
+  }
+  if (accounting.ClassTrackingPerTxnLine !== true) {
+    problems.push(
+      "QBO company setting 'Track classes' must be on and assigned 'One to each row', otherwise line ClassRef is dropped (Account and settings > Advanced > Categories)"
+    );
+  }
 
   if (account && account.AccountSubType !== "UndepositedFunds") {
     problems.push(
