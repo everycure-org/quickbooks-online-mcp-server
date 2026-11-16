@@ -48,7 +48,14 @@ export function createFakeQbo(): FakeQbo {
     if (method === 'GET' && resource === 'query') {
       const q = url.searchParams.get('query') ?? '';
       const entity = /from (\w+)/i.exec(q)?.[1] ?? '';
-      return json(200, { QueryResponse: { [entity]: fake.queryRows[entity] ?? [] } });
+      let rows = fake.queryRows[entity] ?? [];
+      // Honour a leading "where Field = 'value'" so per-key lookups behave like QBO.
+      const where = /where (\w+) = '((?:\\.|[^'\\])*)'/i.exec(q);
+      if (where) {
+        const value = where[2].replace(/\\(.)/g, '$1');
+        rows = rows.filter((r) => String(r[where[1]]) === value);
+      }
+      return json(200, { QueryResponse: { [entity]: rows } });
     }
     if (method === 'GET' && resource === 'preferences') {
       return json(200, { Preferences: fake.preferences });

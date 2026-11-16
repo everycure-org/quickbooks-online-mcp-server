@@ -9,7 +9,7 @@
 [![Entities](https://img.shields.io/badge/Entities-29-orange.svg)](#entities)
 [![Reports](https://img.shields.io/badge/Reports-11-purple.svg)](#reports)
 [![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen.svg)](#testing)
-[![Tests](https://img.shields.io/badge/Tests-662-blue.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-689-blue.svg)](#testing)
 
 [Quick Start](#quick-start) | [Available Tools](#available-tools) | [Authentication](#authentication) | [Documentation](#documentation)
 
@@ -241,7 +241,7 @@ Complete CRUD operations are available for all entity types:
 
 | Tool | Description |
 |------|-------------|
-| `create_deposit` | Create a bank deposit |
+| `create_deposit` | Deposit a Chariot payout's sales receipts into a bank account, idempotently (see [create_deposit](#create_deposit)) |
 | `get_deposit` | Get deposit by ID |
 | `update_deposit` | Update deposit details |
 | `delete_deposit` | Delete a deposit |
@@ -350,8 +350,9 @@ Complete CRUD operations are available for all entity types:
 
 ## Sales receipt writes
 
-`create_sales_receipt`, `void_sales_receipt` and `create_customer` are built for an
-automated routine that books donations (HubSpot gift records) into QBO. They are safe to
+`create_sales_receipt`, `void_sales_receipt`, `create_deposit` and `create_customer` are built
+for an automated routine that books donations (HubSpot gift records) into QBO and then deposits
+each Chariot payout. They are safe to
 call repeatedly and never write unless the server is explicitly configured to.
 
 All tools take a single `params` object. A client that sends `params` as a JSON string is
@@ -428,6 +429,41 @@ Takes `{ display_name, company_name?, parent_id?, dry_run? (default true) }`. Wi
 `parent_id` it creates a sub-customer (`ParentRef`, `Job: true`, `BillWithParent: true`).
 It first looks up the DisplayName (active and inactive); if it exists the customer is
 returned with `status: "already_exists"`.
+
+### `create_deposit`
+
+`POST /v3/company/{realmId}/deposit?requestid={idempotency_key}&minorversion=75`
+
+One deposit per Chariot payout. It links the payout's sales receipts, so they move out of
+Undeposited Funds and into the bank account the payout landed in, matching the bank feed line.
+
+| Field | Type | Required | Maps to |
+|---|---|---|---|
+| `idempotency_key` | string (max 50) | yes | `requestid` query param. Use the Chariot deposit ID. |
+| `txn_date` | `YYYY-MM-DD` | yes | `TxnDate` (payout date) |
+| `deposit_to_account_id` | string | yes | `DepositToAccountRef.value`; must be an active Bank account |
+| `sales_receipt_doc_numbers` | array of strings, min 1 | yes | One `Line` per receipt: `Amount` = receipt `TotalAmt`, `LinkedTxn` = `{ TxnId, TxnType: "SalesReceipt" }` |
+| `expected_total` | number | yes | The payout amount; checked, not sent |
+| `private_note` | string (max 4000) | yes | `PrivateNote`; IDs only |
+| `dry_run` | boolean | no, default `true` | Validate and return the payload without writing |
+
+Before writing, the tool checks (and writes nothing if any fails):
+
+- every DocNumber resolves to a sales receipt, with no repeats;
+- no receipt is voided or has a zero total;
+- every receipt was posted to an Undeposited Funds account;
+- the target account exists, is active and has `AccountType = Bank`;
+- the receipts' totals add up to `expected_total` to the cent.
+
+Deposits have no DocNumber, so idempotency uses QBO's own links: a deposited receipt carries
+`LinkedTxn: { TxnType: "Deposit" }`, and a receipt can be in only one deposit. If every receipt is
+already in the same deposit and that deposit links exactly these receipts, it is returned with
+`status: "already_exists"`. If only some are, or they are spread over deposits, the call is refused.
+
+Output: `{ status: "created" | "already_exists" | "dry_run", id, total_amt, txn_date,
+deposit_to_account_id, sales_receipts: [{ id, doc_number, amount }], payload, environment,
+dry_run_reason?, deposit? }`. There is no void or delete tool on the hosted server: to undo a
+deposit, delete it in QuickBooks, which returns its receipts to Undeposited Funds.
 
 ---
 
