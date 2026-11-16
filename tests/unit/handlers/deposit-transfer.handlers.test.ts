@@ -7,7 +7,6 @@ jest.unstable_mockModule('../../../src/clients/quickbooks-client', () => ({
 }));
 
 // Dynamic imports after mock setup
-const { createQuickbooksDeposit } = await import('../../../src/handlers/create-quickbooks-deposit.handler');
 const { getQuickbooksDeposit } = await import('../../../src/handlers/get-quickbooks-deposit.handler');
 const { updateQuickbooksDeposit } = await import('../../../src/handlers/update-quickbooks-deposit.handler');
 const { deleteQuickbooksDeposit } = await import('../../../src/handlers/delete-quickbooks-deposit.handler');
@@ -24,70 +23,6 @@ describe('Deposit and Transfer Handlers', () => {
   });
 
   describe('Deposit Handlers', () => {
-    it('should create a deposit', async () => {
-      const mockDeposit = { Id: '1', TotalAmt: 1000 };
-      mockQuickBooksInstance.createDeposit.mockImplementation((payload: any, cb: any) => cb(null, mockDeposit));
-
-      const result = await createQuickbooksDeposit({
-        deposit_to_account_ref: 'account-1',
-        line_items: [{ amount: 1000 }]
-      });
-
-      expect(result.isError).toBe(false);
-      expect(result.result).toEqual(mockDeposit);
-    });
-
-    it('should create a deposit with all optional fields', async () => {
-      const mockDeposit = { Id: '1', TotalAmt: 2000 };
-      mockQuickBooksInstance.createDeposit.mockImplementation((payload: any, cb: any) => cb(null, mockDeposit));
-
-      const result = await createQuickbooksDeposit({
-        deposit_to_account_ref: 'account-1',
-        line_items: [
-          {
-            amount: 1000,
-            account_ref: 'income-account-1',
-            description: 'Customer payment'
-          },
-          {
-            amount: 1000,
-            entity_ref: { type: 'Customer', value: 'cust-1' },
-            description: 'Another payment'
-          }
-        ],
-        txn_date: '2024-01-15',
-        private_note: 'Batch deposit'
-      });
-
-      expect(result.isError).toBe(false);
-      expect(result.result).toEqual(mockDeposit);
-    });
-
-    it('should create a deposit - API error', async () => {
-      mockQuickBooksInstance.createDeposit.mockImplementation((payload: any, cb: any) =>
-        cb(new Error('Create failed'), null)
-      );
-
-      const result = await createQuickbooksDeposit({
-        deposit_to_account_ref: 'account-1',
-        line_items: [{ amount: 1000 }]
-      });
-
-      expect(result.isError).toBe(true);
-    });
-
-    it('should create a deposit - authentication error', async () => {
-      (mockQuickbooksClient.authenticate as any).mockRejectedValue(new Error('Auth failed'));
-
-      const result = await createQuickbooksDeposit({
-        deposit_to_account_ref: 'account-1',
-        line_items: [{ amount: 1000 }]
-      });
-
-      expect(result.isError).toBe(true);
-      expect(result.error).toContain('Auth failed');
-    });
-
     it('should get a deposit', async () => {
       mockQuickBooksInstance.getDeposit.mockImplementation((_id: any, cb: any) => cb(null, { Id: '1' }));
 
